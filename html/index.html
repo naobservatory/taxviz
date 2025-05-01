@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Taxonomy Visualization</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    #container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .sample-container {
+      margin-bottom: 10px;
+      display: inline-block;
+    }
+    .chart-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    h2 {
+      margin-bottom: 10px;
+    }
+    .node {
+      cursor: default; /* Changed from pointer to default since clicking does nothing */
+    }
+    .node circle {
+      fill: #fff;
+      stroke: steelblue;
+      stroke-width: 1.5px;
+    }
+    .node text {
+      font: 10px sans-serif;
+      display: none; /* Hide node text labels completely */
+    }
+    .link {
+      fill: none;
+      stroke: #ccc;
+      stroke-width: 1.5px;
+    }
+    .tooltip {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      font-size: 12px;
+      pointer-events: auto !important; /* Always allow interaction */
+      opacity: 0;
+      transition: opacity 0.2s;
+      max-width: 300px;
+      z-index: 1000;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    /* Class for tracking hover state */
+    .tooltip.hover-active {
+      opacity: 0.9 !important;
+    }
+    /* Style for links in tooltip */
+    .tooltip a {
+      color: #0066cc;
+      text-decoration: none;
+    }
+    .tooltip a:hover {
+      text-decoration: underline;
+    }
+    /* Close button for tooltip */
+    .tooltip-close {
+      position: absolute;
+      top: 2px;
+      right: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      color: #999;
+    }
+    .tooltip-close:hover {
+      color: #333;
+    }
+    /* Selectable text in tooltip */
+    .tooltip-content {
+      user-select: text;
+    }
+    #file-input {
+      padding: 10px;
+      margin-bottom: 20px;
+      background-color: #f9f9f9;
+      border: 1px dashed #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #file-input:hover {
+      background-color: #f0f0f0;
+      border-color: #999;
+    }
+    button {
+      padding: 8px 16px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    #controls, #filter-controls {
+      margin-bottom: 20px;
+      padding: 15px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+    }
+    #filter-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 15px;
+    }
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    select {
+      padding: 8px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    .filter-label {
+      font-weight: bold;
+      margin-right: 5px;
+    }
+    .legend {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin-right: 15px;
+    }
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      margin-right: 5px;
+    }
+    .help-text {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 15px;
+    }
+    .active-filter-info {
+      margin-top: 10px;
+      font-style: italic;
+      color: #666;
+    }
+    .file-input-label {
+      display: inline-block;
+      padding: 8px 16px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    .file-input-label:hover {
+      background-color: #45a049;
+    }
+    #file-input {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Virus Taxonomy Visualization</h1>
+  
+  <div id="controls">
+    <label for="file-input" class="file-input-label">Choose File</label>
+    <input type="file" id="file-input" accept=".tsv,.txt">
+  </div>
+  
+  <div id="filter-controls" style="display: none;">
+    <div class="filter-group">
+      <span class="filter-label">View Mode:</span>
+      <select id="view-mode">
+        <option value="all">Show All Samples</option>
+        <option value="by-location">Group by Location</option>
+        <option value="single-location">Show Single Location</option>
+      </select>
+    </div>
+    
+    <div class="filter-group" id="location-filter" style="display: none;">
+      <span class="filter-label">Location:</span>
+      <select id="location-select"></select>
+    </div>
+    
+    <div class="active-filter-info" id="active-filter-info"></div>
+  </div>
+  
+  <div class="help-text">
+    <p>- <strong>Link thickness and node size</strong>: Represents the count of occurrences in each sample</p>
+    <p>- <strong>Color intensity</strong>: Represents how different the relative abundance is from other samples (more intense = more different)</p>
+    <p>- <strong>Hover</strong> over nodes to see names and detailed information</p>
+    <p>- <strong>Move mouse</strong> to tooltip to interact with it (copy text or follow links)</p>
+    <p>- <strong>Click on tooltip</strong> to make it persistent</p>
+  </div>
+  
+  <div id="legend"></div>
+  
+  <div id="container">
+    <div id="loading" style="display: none;">Loading data...</div>
+    <div id="visualization"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+  <script>
+    // Main state variables
+    let tsvData = [];
+    let parsedData = [];
+    let taxonomyTree = {};
+    let samples = [];
+    let maxCounts = {};
+    let relativeDifferences = {};
+    let activeTooltip = null; // Track active tooltip
+    let currentNode = null; // Track currently hovered node
+    let filterMode = "all"; // Default filter mode
+    let selectedLocation = ""; // Selected location for filtering
+    let locations = new Set(); // Set of all available locations
+    let filteredSamples = []; // Samples after filtering
+    
+    // DOM elements
+    const fileInput = document.getElementById('file-input');
+    const container = document.getElementById('container');
+    const visualization = document.getElementById('visualization');
+    const loadingIndicator = document.getElementById('loading');
+    const legendDiv = document.getElementById('legend');
+    const filterControls = document.getElementById('filter-controls');
+    const viewModeSelect = document.getElementById('view-mode');
+    const locationFilter = document.getElementById('location-filter');
+    const locationSelect = document.getElementById('location-select');
+    const activeFilterInfo = document.getElementById('active-filter-info');
+    
+    // Event listeners
+    fileInput.addEventListener('change', handleFileLoad);
+    viewModeSelect.addEventListener('change', handleViewModeChange);
+    locationSelect.addEventListener('change', applyFilters);
+    
+    // Function to handle view mode change
+    function handleViewModeChange() {
+      const mode = viewModeSelect.value;
+      if (mode === 'all' || mode === 'by-location') {
+        locationFilter.style.display = 'none';
+      } else {
+        locationFilter.style.display = 'flex';
+      }
+      
+      // Automatically apply filters when view mode changes
+      applyFilters();
+    }
+    
+    // Function to extract location from sample name
+    function extractLocation(sampleName) {
+      // Format: YYYY-MM-DD-Location
+      const parts = sampleName.split('-');
+      if (parts.length < 4) return 'Unknown';
+      
+      // If format has more parts like 'CHI-Calumet', join them back
+      return parts.slice(3).join('-');
+    }
+    
+    // Function to extract date from sample name
+    function extractDate(sampleName) {
+      // Format: YYYY-MM-DD-Location
+      const parts = sampleName.split('-');
+      if (parts.length < 4) return 'Unknown';
+      
+      return `${parts[0]}-${parts[1]}-${parts[2]}`;
+    }
+    
+    // Populate location filter and apply initial filtering
+    function populateLocationFilter() {
+      // Clear existing options
+      locationSelect.innerHTML = '';
+      
+      // Add each location as an option
+      Array.from(locations).sort().forEach(location => {
+        const option = document.createElement('option');
+        option.value = location;
+        option.textContent = location;
+        locationSelect.appendChild(option);
+      });
+      
+      // Select first location by default
+      if (locations.size > 0) {
+        selectedLocation = locationSelect.options[0].value;
+      }
+      
+      // Show filter controls
+      filterControls.style.display = 'flex';
+      
+      // Apply initial filtering
+      applyFilters();
+    }
+    
+    // Function to apply filters
+    function applyFilters() {
+      filterMode = viewModeSelect.value;
+      
+      if (filterMode === 'single-location' && locationSelect.value) {
+        selectedLocation = locationSelect.value;
+      }
+      
+      updateFilteredSamples();
+      updateActiveFilterInfo();
+      createVisualizations();
+    }
+    
+    // Update filtered samples based on current filter settings
+    function updateFilteredSamples() {
+      if (filterMode === "all") {
+        // Show all samples
+        filteredSamples = [...samples];
+      } else if (filterMode === "by-location") {
+        // Group by location - create one virtual "sample" per location
+        filteredSamples = [];
+        
+        // Get unique locations
+        const uniqueLocations = Array.from(locations).sort();
+        
+        // For each location, create a virtual "sample" that combines all samples from that location
+        uniqueLocations.forEach(location => {
+          const locationSamples = samples.filter(sample => extractLocation(sample) === location);
+          if (locationSamples.length > 0) {
+            // Use the first sample name as the base for this location group
+            const locationGroupName = `${location} (${locationSamples.length} samples)`;
+            filteredSamples.push(locationGroupName);
+            
+            // Create a combined representation for this location in the taxonomyTree
+            combineSamplesForLocation(location, locationGroupName, locationSamples);
+          }
+        });
+      } else if (filterMode === "single-location") {
+        // Show all samples for a single location
+        filteredSamples = samples.filter(sample => extractLocation(sample) === selectedLocation);
+      }
+    }
+    
+    // Function to combine samples for a location into a single virtual sample
+    function combineSamplesForLocation(location, locationGroupName, locationSamples) {
+      // Create a new entry in taxonomyTree for this location group
+      // Start by copying structure from the first sample
+      const firstSample = locationSamples[0];
+      
+      // For each taxid in our dataset
+      parsedData.forEach(item => {
+        const taxid = item.taxid;
+        
+        // If this is the first time we're processing this location group
+        if (!taxonomyTree[taxid][locationGroupName]) {
+          // Initialize with zero count
+          taxonomyTree[taxid][locationGroupName] = 0;
+          
+          // Sum up counts across all samples for this location
+          locationSamples.forEach(sample => {
+            taxonomyTree[taxid][locationGroupName] += taxonomyTree[taxid][sample] || 0;
+          });
+          
+          // Calculate the average by dividing by the number of samples
+          taxonomyTree[taxid][locationGroupName] = Math.round(
+            taxonomyTree[taxid][locationGroupName] / locationSamples.length
+          );
+        }
+      });
+      
+      // Also update the maxCounts and relativeDifferences for this location group
+      calculateLocationGroupStatistics(locationGroupName, locationSamples);
+    }
+    
+    // Calculate statistics for a location group
+    function calculateLocationGroupStatistics(locationGroupName, locationSamples) {
+      // Update maxCounts for this location group
+      maxCounts[locationGroupName] = 0;
+      parsedData.forEach(item => {
+        if (taxonomyTree[item.taxid][locationGroupName] > maxCounts[locationGroupName]) {
+          maxCounts[locationGroupName] = taxonomyTree[item.taxid][locationGroupName];
+        }
+      });
+      
+      // Update relativeDifferences for this location group
+      // We'll use the average of the differences from the constituent samples
+      parsedData.forEach(item => {
+        const taxid = item.taxid;
+        
+        if (!relativeDifferences[taxid]) {
+          relativeDifferences[taxid] = {};
+        }
+        
+        let sumDiff = 0;
+        let count = 0;
+        
+        locationSamples.forEach(sample => {
+          if (relativeDifferences[taxid][sample]) {
+            sumDiff += relativeDifferences[taxid][sample];
+            count++;
+          }
+        });
+        
+        // Calculate average difference for this location group
+        relativeDifferences[taxid][locationGroupName] = count > 0 ? sumDiff / count : 0;
+      });
+    }
+    
+    // Update the active filter information text
+    function updateActiveFilterInfo() {
+      let infoText = "";
+      
+      if (filterMode === "all") {
+        infoText = `Showing all ${samples.length} samples`;
+      } else if (filterMode === "by-location") {
+        infoText = `Showing aggregated data for ${locations.size} locations`;
+      } else if (filterMode === "single-location") {
+        const locationSamples = samples.filter(sample => extractLocation(sample) === selectedLocation);
+        infoText = `Showing ${locationSamples.length} samples from ${selectedLocation}`;
+      }
+      
+      activeFilterInfo.textContent = infoText;
+    }
+    
+    // Create tooltip
+    const tooltip = d3.select("body").append("div")
+      .attr("class", "tooltip")
+      .style("opacity", 0);
+    
+    // Add event listener to document to handle clicks outside tooltip
+    document.addEventListener('click', function(event) {
+      // If the click wasn't on a tooltip, close any persistent tooltip
+      if (activeTooltip && 
+          !event.target.closest('.tooltip')) {
+        makeTooltipNonPersistent();
+      }
+
+      // If there's any non-persistent tooltip showing, also hide it
+      if (!tooltip.classed("persistent") && tooltip.classed("hover-active")) {
+        tooltip.classed("hover-active", false)
+          .transition()
+          .duration(200)
+          .style("opacity", 0);
+        currentNode = null;
+      }      
+    });
+    
+    // Add a helper function to sanitize chart IDs
+    function sanitizeId(id) {
+      return id.replace(/\s/g, '_').replace(/[\(\)]/g, '_');
+    }
+    
+    // Function to make tooltip persistent
+    function makeTooltipPersistent() {
+      // Only proceed if the tooltip is visible
+      if (parseFloat(tooltip.style("opacity")) > 0) {
+        tooltip
+          .classed("persistent", true);
+        
+        // Add close button if not already there
+        if (!tooltip.select(".tooltip-close").size()) {
+          tooltip.append("div")
+            .attr("class", "tooltip-close")
+            .html("&times;")
+            .on("click", function(event) {
+              event.stopPropagation(); // Prevent event from bubbling
+              makeTooltipNonPersistent();
+            });
+        }
+        
+        // Apply a different background color to indicate persistence
+        tooltip.style("background-color", "rgba(255, 255, 240, 0.98)");
+        
+        activeTooltip = tooltip.node();
+      }
+    }
+    
+    // Function to make tooltip non-persistent
+    function makeTooltipNonPersistent() {
+      tooltip
+        .classed("persistent", false)
+        .classed("hover-active", false) // Also remove hover-active class
+        .style("opacity", 0)
+        .style("background-color", "rgba(255, 255, 255, 0.95)");
+      
+      activeTooltip = null;
+      currentNode = null; // Reset current node
+    }
+    
+    // Function to handle file loading
+    function handleFileLoad() {
+      const file = fileInput.files[0];
+      if (!file) {
+        return;
+      }
+      
+      loadingIndicator.style.display = 'block';
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const content = e.target.result;
+        processData(content);
+      };
+      reader.onerror = function() {
+        alert('Error reading the file.');
+        loadingIndicator.style.display = 'none';
+      };
+      reader.readAsText(file);
+    }
+    
+
+    
+    // Process the TSV data
+    function processData(content) {
+      // Parse TSV data
+      const lines = content.trim().split('\n');
+      const headers = lines[0].split('\t');
+      
+      // Extract sample names (all columns except first three)
+      samples = headers.slice(3);
+      
+      // Extract locations from sample names
+      locations.clear();
+      samples.forEach(sample => {
+        const location = extractLocation(sample);
+        locations.add(location);
+      });
+      
+      // Set initial filtered samples to all samples
+      filteredSamples = [...samples];
+      
+      // Parse each line into an object
+      parsedData = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split('\t');
+        if (values.length !== headers.length) continue;
+        
+        const row = {
+          taxid: values[0],
+          parent_taxid: values[1],
+          name: values[2]
+        };
+        
+        // Add sample counts
+        samples.forEach((sample, index) => {
+          row[sample] = parseInt(values[3 + index]) || 0;
+        });
+        
+        parsedData.push(row);
+      }
+      
+      // Build the taxonomy tree
+      buildTaxonomyTree();
+      
+      // Calculate relative abundances and differences
+      calculateRelativeDifferences();
+      
+      // Populate location filter
+      populateLocationFilter();
+      
+      // Create visualizations for each sample
+      createVisualizations();
+      
+      loadingIndicator.style.display = 'none';
+    }
+    
+    // Build the taxonomy tree from parsed data
+    function buildTaxonomyTree() {
+      taxonomyTree = {};
+      
+      // First, create nodes for all taxa
+      parsedData.forEach(item => {
+        taxonomyTree[item.taxid] = {
+          taxid: item.taxid,
+          name: item.name,
+          children: [],
+          parent: item.parent_taxid
+        };
+        
+        // Add sample counts
+        samples.forEach(sample => {
+          taxonomyTree[item.taxid][sample] = item[sample];
+        });
+      });
+      
+      // Then, build the hierarchy
+      parsedData.forEach(item => {
+        if (item.parent_taxid && taxonomyTree[item.parent_taxid]) {
+          taxonomyTree[item.parent_taxid].children.push(taxonomyTree[item.taxid]);
+        }
+      });
+      
+      // Find the root nodes (those with no parent or parent not in the dataset)
+      const rootTaxids = parsedData
+        .filter(item => !taxonomyTree[item.parent_taxid])
+        .map(item => item.taxid);
+      
+      // Create a single root if there are multiple top-level nodes
+      if (rootTaxids.length > 1) {
+        taxonomyTree['root'] = {
+          taxid: 'root',
+          name: 'Root',
+          children: rootTaxids.map(id => taxonomyTree[id]),
+          parent: null
+        };
+        
+        // Sum up sample counts for the root
+        samples.forEach(sample => {
+          taxonomyTree['root'][sample] = rootTaxids.reduce((sum, id) => sum + (taxonomyTree[id][sample] || 0), 0);
+        });
+      } else if (rootTaxids.length === 1) {
+        // If only one root, use it directly
+        taxonomyTree['root'] = taxonomyTree[rootTaxids[0]];
+      }
+    }
+    
+    // Calculate relative abundances and differences between samples
+    function calculateRelativeDifferences() {
+      relativeDifferences = {};
+      maxCounts = {};
+      
+      // Get total counts for each sample
+      const totalCounts = {};
+      samples.forEach(sample => {
+        totalCounts[sample] = parsedData.reduce((sum, item) => {
+          // Only count top-level taxa to avoid double counting
+          if (!taxonomyTree[item.parent_taxid]) {
+            return sum + (item[sample] || 0);
+          }
+          return sum;
+        }, 0);
+        
+        // Find maximum count for scaling
+        maxCounts[sample] = Math.max(...parsedData.map(item => item[sample] || 0));
+      });
+      
+      // Calculate relative abundances
+      const relativeAbundances = {};
+      parsedData.forEach(item => {
+        relativeAbundances[item.taxid] = {};
+        samples.forEach(sample => {
+          if (totalCounts[sample] > 0) {
+            relativeAbundances[item.taxid][sample] = (item[sample] || 0) / totalCounts[sample];
+          } else {
+            relativeAbundances[item.taxid][sample] = 0;
+          }
+        });
+      });
+      
+      // Calculate differences in relative abundance
+      parsedData.forEach(item => {
+        relativeDifferences[item.taxid] = {};
+        
+        samples.forEach(sampleA => {
+          let totalDiff = 0;
+          let count = 0;
+          
+          samples.forEach(sampleB => {
+            if (sampleA !== sampleB) {
+              const absDiff = Math.abs(
+                relativeAbundances[item.taxid][sampleA] - relativeAbundances[item.taxid][sampleB]
+              );
+              totalDiff += absDiff;
+              count++;
+            }
+          });
+          
+          // Average difference from this sample to all others
+          relativeDifferences[item.taxid][sampleA] = count > 0 ? totalDiff / count : 0;
+        });
+      });
+    }
+    
+    // Create visualizations for each sample
+    function createVisualizations() {
+      // Clear previous visualizations
+      visualization.innerHTML = '';
+      
+      // Create a color legend
+      createLegend();
+      
+      // Create a visualization for each filtered sample
+      filteredSamples.forEach((sample, index) => {
+        const sampleDiv = document.createElement('div');
+        sampleDiv.className = 'sample-container';
+        
+        // Check if this is a location group or regular sample
+        const isLocationGroup = sample.includes(' (') && sample.includes(' samples)');
+        
+        if (isLocationGroup) {
+          // Location group - extract location name
+          const location = sample.split(' (')[0];
+          sampleDiv.innerHTML = `<h2>${sample}</h2>`;
+        } else {
+          // Regular sample - add location and date information
+          const location = extractLocation(sample);
+          const date = extractDate(sample);
+          sampleDiv.innerHTML = `<h2>${sample}</h2>`;
+        }
+        
+        const chartDiv = document.createElement('div');
+        chartDiv.className = 'chart';
+        chartDiv.id = `chart-${sanitizeId(sample)}`;
+        sampleDiv.appendChild(chartDiv);
+        
+        visualization.appendChild(sampleDiv);
+        
+        // Create the tree visualization
+        createTreeVisualization(sample, chartDiv.id);
+      });
+    }
+    
+    // Create legend for color scale
+    function createLegend() {
+      legendDiv.innerHTML = '<h3>Legend</h3><div class="legend"></div>';
+      const legend = legendDiv.querySelector('.legend');
+      
+      // Create color scale legend
+      const colorScale = d3.scaleSequential(d3.interpolateReds)
+        .domain([0, 1]);
+      
+      const steps = 5;
+      for (let i = 0; i <= steps; i++) {
+        const value = i / steps;
+        const legendItem = document.createElement('div');
+        legendItem.className = 'legend-item';
+        
+        const colorBox = document.createElement('div');
+        colorBox.className = 'legend-color';
+        colorBox.style.backgroundColor = colorScale(value);
+        
+        const label = document.createElement('span');
+        label.textContent = value === 0 ? 'Similar' : value === 1 ? 'Different' : '';
+        
+        legendItem.appendChild(colorBox);
+        legendItem.appendChild(label);
+        legend.appendChild(legendItem);
+      }
+    }
+    
+    // Create tree visualization for a specific sample
+    function createTreeVisualization(sample, containerId) {
+      // Set up dimensions for vertical layout (root at top)
+      const width = 600;
+      const height = 150;
+      const margin = {top: 10, right: 5, bottom: 5, left: 5}; // Increased top margin for root
+      
+      // Initialize counter for node IDs
+      let i = 0;
+      
+      // Create SVG
+      const svg = d3.select(`#${containerId}`)
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+      
+      // Create tree layout for vertical tree (root at top)
+      const treeLayout = d3.tree()
+        .size([width - margin.left - margin.right, height - margin.top - margin.bottom]);
+      
+      // Create a deep copy of the taxonomy tree to modify for this sample
+      const treeCopy = JSON.parse(JSON.stringify(taxonomyTree['root']));
+      
+      // Prune zero-count subtrees
+      pruneZeroCountSubtrees(treeCopy, sample);
+      
+      // Root and descendants
+      const root = d3.hierarchy(treeCopy);
+      
+      // Update the tree once on initialization
+      update(root);
+      
+      // Function to prune zero-count subtrees
+      function pruneZeroCountSubtrees(node, sample) {
+        if (!node) return;
+        
+        // If this node has children
+        if (node.children && node.children.length > 0) {
+          // First, filter out uninteresting zero-count children
+          const filteredChildren = [];
+          
+          for (let i = 0; i < node.children.length; i++) {
+            const child = node.children[i];
+            
+            // Skip entirely if:
+            // 1. The child has zero count for this sample AND
+            // 2. The difference from other samples is low (below threshold)
+            const diffValue = relativeDifferences[child.taxid]?.[sample] || 0;
+            const diffThreshold = 0.1; // Threshold for "interesting" difference - adjust as needed
+            
+            if (child[sample] === 0 && diffValue < diffThreshold) {
+              // Skip this zero-count, low-difference node entirely
+              continue;
+            }
+            
+            // If child has zero count but is interesting (high difference)
+            if (child[sample] === 0) {
+              // Remove its children to keep only the top node of zero-count subtree
+              child.children = [];
+              filteredChildren.push(child);
+            } else {
+              // If it has a count, process its children normally and keep it
+              pruneZeroCountSubtrees(child, sample);
+              filteredChildren.push(child);
+            }
+          }
+          
+          // Replace children array with filtered version
+          node.children = filteredChildren;
+        }
+      }
+      
+      // Function to update the visualization
+      function update(source) {
+        // Compute the new tree layout
+        const nodes = treeLayout(root);
+        
+        // Get all links and nodes
+        const links = nodes.descendants().slice(1);
+        const nodeElements = nodes.descendants();
+        
+        // For vertical layout (root at top)
+        nodeElements.forEach(d => { 
+          // y is vertical position (top-to-bottom)
+          d.y = d.depth * 10; // Scale down vertical spacing
+          // Keep d.x as is (horizontal position)
+        });
+        
+        // Color scale for relative difference
+        const colorScale = d3.scaleSequential(d3.interpolateReds)
+          .domain([0, 1]);
+        
+        // ========== Update Links ==========
+        // Update the links
+        const link = svg.selectAll('path.link')
+          .data(links, d => d.id || (d.id = ++i));
+          
+        // Enter any new links
+        const linkEnter = link.enter().append('path')
+          .attr('class', 'link')
+          .attr('d', d => {
+            const o = {x: source.x, y: source.y};
+            return diagonal(o, o);
+          })
+          .style('stroke-width', d => {
+            const count = d.data[sample] || 0;
+            const maxCount = maxCounts[sample] || 1;
+            return Math.max(0.5, 4 * (count / maxCount)) + 'px';
+          });
+        
+        // UPDATE
+        const linkUpdate = linkEnter.merge(link);
+        
+        // Transition to the new position
+        linkUpdate.transition()
+          .duration(750)
+          .attr('d', d => diagonal(d, d.parent));
+        
+        // Remove any exiting links
+        link.exit().transition()
+          .duration(750)
+          .attr('d', d => {
+            const o = {x: source.x, y: source.y};
+            return diagonal(o, o);
+          })
+          .remove();
+          
+        // ========== Update Nodes ==========
+        // Update the nodes
+        const node = svg.selectAll('g.node')
+          .data(nodeElements, d => d.id || (d.id = ++i));
+        
+        // Enter any new nodes at the parent's previous position
+        const nodeEnter = node.enter().append('g')
+          .attr('class', 'node')
+          .attr('transform', d => `translate(${d.x},${d.y})`)
+          .on('mouseover', showTooltip)
+          .on('mouseout', handleMouseOut);
+        
+        // Add Circle for the nodes
+        nodeEnter.append('circle')
+          .attr('r', d => {
+            const count = d.data[sample] || 0;
+            const maxCount = maxCounts[sample] || 1;
+            return Math.max(1.5, 4 * (count / maxCount));
+          })
+          .style('fill', d => {
+            // Color by relative difference
+            const diffValue = relativeDifferences[d.data.taxid]?.[sample] || 0;
+            return colorScale(diffValue);
+          })
+          .style('stroke', '#ddd');
+        
+        // We still append text elements for completeness but they will be hidden by CSS
+        nodeEnter.append('text')
+          .attr('dy', '.35em')
+          .attr('x', d => d.children ? -8 : 8)
+          .attr('text-anchor', d => d.children ? 'end' : 'start')
+          .text(d => d.data.name);
+        
+        // UPDATE
+        const nodeUpdate = nodeEnter.merge(node);
+        
+        // Transition to the proper position for the node
+        nodeUpdate.transition()
+          .duration(750)
+          .attr('transform', d => `translate(${d.x},${d.y})`);
+        
+        // Update the node attributes and style
+        nodeUpdate.select('circle')
+          .attr('r', d => {
+            const count = d.data[sample] || 0;
+            const maxCount = maxCounts[sample] || 1;
+            return Math.max(3, 8 * (count / maxCount));
+          })
+          .style('fill', d => {
+            const diffValue = relativeDifferences[d.data.taxid]?.[sample] || 0;
+            return colorScale(diffValue);
+          });
+        
+        // Remove any exiting nodes
+        const nodeExit = node.exit().transition()
+          .duration(750)
+          .attr('transform', d => `translate(${d.x},${d.y})`)
+          .remove();
+        
+        // On exit reduce the node circles size to 0
+        nodeExit.select('circle')
+          .attr('r', 0);
+      }
+      
+      // Show tooltip on mouseover
+      function showTooltip(event, d) {
+        // Don't show a new tooltip if one is already persistent
+        if (activeTooltip && tooltip.classed("persistent")) {
+          return;
+        }
+        
+        // Store current node to prevent wrong tooltip display
+        currentNode = d;
+        
+        // Check if this is a location group sample (combined from multiple samples)
+        const isLocationGroup = sample.includes(' (') && sample.includes(' samples)');
+        
+        // Calculate relative abundance for current sample
+        const count = d.data[sample] || 0;
+        const totalCount = root.data[sample] || 1;
+        const relativeAbundance = (count / totalCount * 100).toFixed(2);
+        
+        // Calculate average abundance across other samples
+        let avgOtherSamples = 0;
+        let otherSamplesCount = 0;
+        
+        // If this is a location group, compare to other location groups
+        const samplesToCompare = isLocationGroup ? 
+          filteredSamples.filter(s => s !== sample) : 
+          samples.filter(s => s !== sample);
+        
+        samplesToCompare.forEach(otherSample => {
+          // Skip comparing to location groups if this is a regular sample
+          if (!isLocationGroup && otherSample.includes(' (')) return;
+          
+          const otherCount = d.data[otherSample] || 0;
+          const otherTotalCount = taxonomyTree['root'][otherSample] || 1;
+          const otherRelativeAbundance = (otherCount / otherTotalCount) * 100;
+          
+          avgOtherSamples += otherRelativeAbundance;
+          otherSamplesCount++;
+        });
+        
+        // Calculate the average if there are other samples
+        const avgRelativeAbundance = otherSamplesCount > 0 ? 
+          (avgOtherSamples / otherSamplesCount).toFixed(2) : 
+          "N/A";
+        
+        // Create NCBI link if valid taxid (not "root")
+        const taxidLink = d.data.taxid !== 'root' ? 
+          `<a href="https://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=${d.data.taxid}" target="_blank">${d.data.taxid}</a>` : 
+          d.data.taxid;
+        
+        // Get node position in page coordinates
+        const nodeElement = this;
+        const nodeRect = nodeElement.getBoundingClientRect();
+        const nodePageX = nodeRect.left + window.pageXOffset + nodeRect.width/2;
+        const nodePageY = nodeRect.top + window.pageYOffset + nodeRect.height/2;
+        
+        // Additional information for location groups
+        let additionalInfo = '';
+        if (isLocationGroup) {
+          additionalInfo = `<br>This represents the average across all samples at this location`;
+        }
+        
+        tooltip
+          .classed("hover-active", true)
+          .transition()
+          .duration(200)
+          .style("opacity", .9);
+        
+        tooltip
+          .html(`
+            <div class="tooltip-content">
+              <strong>${d.data.name}</strong> (taxid: ${taxidLink})<br>
+              Count: ${count}<br>
+              Relative abundance in this sample: ${relativeAbundance}%<br>
+              Average relative abundance in other samples: ${avgRelativeAbundance}%${additionalInfo}<br>
+              <small>(Click to make this tooltip persistent)</small>
+            </div>
+          `)
+          .style("left", (nodePageX + 10) + "px") // Position relative to node, not mouse
+          .style("top", (nodePageY - 28) + "px");  // Position relative to node, not mouse
+        
+        // Add event listeners to tooltip itself
+        tooltip
+          .on("click", function() {
+            makeTooltipPersistent();
+            event.stopPropagation(); // Prevent event from bubbling
+          })
+          .on("mouseover", function() {
+            // Keep tooltip visible when mouse is over it
+            tooltip.classed("hover-active", true);
+          })
+          .on("mouseout", function() {
+            // Only remove hover-active class if not persistent
+            if (!tooltip.classed("persistent")) {
+              tooltip.classed("hover-active", false);
+            }
+          });
+      }
+      
+      // Handle mouseout - don't hide tooltip when moving to tooltip
+      function handleMouseOut(event, d) {
+        // Check if we're moving from a node to its tooltip
+        // and only hide if not persistent
+        setTimeout(function() {
+          // Only hide if this is for the current node and it's not being hovered or persistent
+          if (currentNode === d && !tooltip.classed("hover-active") && !tooltip.classed("persistent")) {
+            tooltip.transition()
+              .duration(200)
+              .style("opacity", 0);
+            
+            currentNode = null;
+          }
+        }, 100); // Small delay to check hover state
+      }
+      
+      // Creates a curved path from parent to child nodes for vertical layout (root at top)
+      function diagonal(s, d) {
+        return `M ${s.x} ${s.y}
+                C ${(s.x + d.x) / 2} ${s.y},
+                  ${(s.x + d.x) / 2} ${d.y},
+                  ${d.x} ${d.y}`;
+      }
+    }
+  </script>
+</body>
+</html>
