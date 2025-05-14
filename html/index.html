@@ -402,11 +402,6 @@
           locationSamples.forEach(sample => {
             taxonomyTree[taxid][locationGroupName] += taxonomyTree[taxid][sample] || 0;
           });
-
-          // Calculate the average by dividing by the number of samples
-          taxonomyTree[taxid][locationGroupName] = Math.round(
-            taxonomyTree[taxid][locationGroupName] / locationSamples.length
-          );
         }
       });
 
